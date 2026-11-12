@@ -19,6 +19,7 @@ Usage of AI:
 ---------------------------------------------------------------------------
 """
 
+import math
 import os
 import sys
 
@@ -81,9 +82,33 @@ def fmt6(x):
 
 
 def new_figure():
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, ax = plt.subplots(figsize=(13, 10))
     ax.axis("off")
     return fig, ax
+
+
+def min_distance(pos):
+    """Smallest distance between any two nodes in a layout."""
+    points = list(pos.values())
+    return min(
+        math.dist(p, q)
+        for i, p in enumerate(points) for q in points[i + 1:]
+    ) if len(points) > 1 else 0.0
+
+
+def layout(G):
+    """Spring layout with fixed seeds (same picture every run).
+
+    Tries a few seeds and keeps the one whose closest two nodes are
+    farthest apart, so labels overlap as little as possible.
+    """
+    n = G.number_of_nodes()
+    seeds = range(427, 447) if n <= 60 else [427]
+    layouts = [
+        nx.spring_layout(G, seed=s, k=5 / math.sqrt(n), iterations=300)
+        for s in seeds
+    ]
+    return max(layouts, key=min_distance)
 
 
 def draw_digraph(G, ax, colors, sizes, labels, font_size=8):
@@ -91,7 +116,7 @@ def draw_digraph(G, ax, colors, sizes, labels, font_size=8):
 
     colors, sizes and labels are dicts keyed by node.
     """
-    pos = nx.spring_layout(G, seed=427)
+    pos = layout(G)
     nodes = sorted(G.nodes())
     node_sizes = [sizes[n] for n in nodes]
     nx.draw_networkx_nodes(
@@ -99,8 +124,8 @@ def draw_digraph(G, ax, colors, sizes, labels, font_size=8):
         node_color=[colors[n] for n in nodes], node_size=node_sizes,
     )
     nx.draw_networkx_edges(
-        G, pos, ax=ax, edge_color="gray", arrows=True, arrowsize=15,
-        node_size=node_sizes, connectionstyle="arc3,rad=0.1",
+        G, pos, ax=ax, nodelist=nodes, edge_color="gray", arrows=True,
+        arrowsize=15, node_size=node_sizes, connectionstyle="arc3,rad=0.1",
     )
     nx.draw_networkx_labels(G, pos, ax=ax, labels=labels, font_size=font_size)
 
@@ -153,10 +178,69 @@ def cmd_structure(args):
     finish(lines, fig, output)
 
 
+def normalize(scores):
+    """Scale scores so they sum to 1 (left unchanged if they sum to 0)."""
+    total = sum(scores.values())
+    if total == 0:
+        return scores
+    return {n: v / total for n, v in scores.items()}
+
+
+def top_node(scores):
+    """Node with the highest score; ties go to the alphabetically first node."""
+    best = max(scores.values())
+    return min(
+        n for n, v in scores.items()
+        if math.isclose(v, best, rel_tol=1e-9, abs_tol=1e-12)
+    )
+
+
 def cmd_hits(args):
-    load_graph(args[0])
-    parse_k(args[1])
-    fail("hits is not implemented yet")
+    G = load_graph(args[0])
+    k = parse_k(args[1])
+    output = args[2]
+
+    nodes = sorted(G.nodes())
+    auth = {n: 1.0 for n in nodes}
+    hub = {n: 1.0 for n in nodes}
+
+    for _ in range(k):
+        # Authority Update Rule: sum of the hub scores of the pages linking in.
+        auth = {p: sum(hub[q] for q in G.predecessors(p)) for p in nodes}
+        auth = normalize(auth)
+        # Hub Update Rule: sum of the (new) authority scores of the pages
+        # it links to.
+        hub = {q: sum(auth[p] for p in G.successors(q)) for q in nodes}
+        hub = normalize(hub)
+
+    top_auth = top_node(auth)
+    top_hub = top_node(hub)
+
+    lines = [
+        f"NODES {G.number_of_nodes()}",
+        f"ITERATIONS {k}",
+        " ".join(["AUTHORITIES"] + [f"{n}:{fmt6(auth[n])}" for n in nodes]),
+        " ".join(["HUBS"] + [f"{n}:{fmt6(hub[n])}" for n in nodes]),
+        f"TOP_AUTHORITY {top_auth}",
+        f"TOP_HUB {top_hub}",
+    ]
+
+    # Node size is proportional to the authority score (with a small
+    # minimum so nodes with authority 0 stay visible).
+    colors = {n: "orange" if n == top_auth else "lightblue" for n in nodes}
+    sizes = {n: max(700, 12000 * auth[n]) for n in nodes}
+    labels = {
+        n: f"{n}\nauth {fmt6(auth[n])}\nhub {fmt6(hub[n])}" for n in nodes
+    }
+
+    fig, ax = new_figure()
+    draw_digraph(G, ax, colors, sizes, labels, font_size=7)
+    ax.set_title(
+        f"HITS after {k} updates (size = authority, "
+        f"top authority {top_auth} in orange)"
+    )
+
+    finish(lines, fig, output)
 
 
 def cmd_pagerank(args):
