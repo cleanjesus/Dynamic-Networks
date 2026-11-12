@@ -244,10 +244,54 @@ def cmd_hits(args):
 
 
 def cmd_pagerank(args):
-    load_graph(args[0])
-    parse_k(args[1])
-    parse_s(args[2])
-    fail("pagerank is not implemented yet")
+    G = load_graph(args[0])
+    k = parse_k(args[1])
+    s = parse_s(args[2])
+    output = args[3]
+
+    nodes = sorted(G.nodes())
+    n = len(nodes)
+    rank = {v: 1 / n for v in nodes}
+
+    for _ in range(k):
+        # Basic PageRank Update Rule: each page divides its PageRank equally
+        # across its outgoing links; a page with no outgoing links passes all
+        # of its PageRank to itself.
+        shares = {v: 0.0 for v in nodes}
+        for v in nodes:
+            out = list(G.successors(v))
+            if out:
+                for u in out:
+                    shares[u] += rank[v] / len(out)
+            else:
+                shares[v] += rank[v]
+        # Scaling Down: multiply by s, then give every page (1 - s) / n.
+        rank = {v: s * shares[v] + (1 - s) / n for v in nodes}
+
+    top_page = top_node(rank)
+
+    lines = [
+        f"NODES {G.number_of_nodes()}",
+        f"ITERATIONS {k}",
+        f"SCALE {fmt6(s)}",
+        " ".join(["PAGERANK"] + [f"{v}:{fmt6(rank[v])}" for v in nodes]),
+        f"TOP_PAGE {top_page}",
+    ]
+
+    # Node size is proportional to PageRank (scaled by n so a typical node
+    # has about the same size on any graph, with a small minimum).
+    colors = {v: "orange" if v == top_page else "lightblue" for v in nodes}
+    sizes = {v: max(300, 1200 * n * rank[v]) for v in nodes}
+    labels = {v: f"{v}\n{fmt6(rank[v])}" for v in nodes}
+
+    fig, ax = new_figure()
+    draw_digraph(G, ax, colors, sizes, labels)
+    ax.set_title(
+        f"Scaled PageRank after {k} updates, s={fmt6(s)} "
+        f"(size = PageRank, top page {top_page} in orange)"
+    )
+
+    finish(lines, fig, output)
 
 
 COMMANDS = {
