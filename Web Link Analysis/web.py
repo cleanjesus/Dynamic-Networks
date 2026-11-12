@@ -45,7 +45,11 @@ def load_graph(path):
     try:
         G = nx.read_gml(path)
     except Exception as error:
-        fail(f"cannot read GML file {path}: {error}")
+        # Some files have node ids but no labels: fall back to the ids.
+        try:
+            G = nx.read_gml(path, label=None)
+        except Exception:
+            fail(f"cannot read GML file {path}: {error}")
     if not G.is_directed():
         fail("graph must be directed")
     if G.is_multigraph():
@@ -132,7 +136,10 @@ def draw_digraph(G, ax, colors, sizes, labels, font_size=8):
 
 def finish(lines, fig, output):
     """Save the PNG, then print the result lines and GRAPH_IMAGE."""
-    fig.savefig(output, format="png", bbox_inches="tight")
+    try:
+        fig.savefig(output, format="png", bbox_inches="tight")
+    except OSError as error:
+        fail(f"cannot write {output}: {error}")
     plt.close(fig)
     for line in lines:
         print(line)
