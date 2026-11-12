@@ -86,6 +86,25 @@ def new_figure():
     return fig, ax
 
 
+def draw_digraph(G, ax, colors, sizes, labels, font_size=8):
+    """Draw a directed graph with arrows, using the same layout every run.
+
+    colors, sizes and labels are dicts keyed by node.
+    """
+    pos = nx.spring_layout(G, seed=427)
+    nodes = sorted(G.nodes())
+    node_sizes = [sizes[n] for n in nodes]
+    nx.draw_networkx_nodes(
+        G, pos, ax=ax, nodelist=nodes,
+        node_color=[colors[n] for n in nodes], node_size=node_sizes,
+    )
+    nx.draw_networkx_edges(
+        G, pos, ax=ax, edge_color="gray", arrows=True, arrowsize=15,
+        node_size=node_sizes, connectionstyle="arc3,rad=0.1",
+    )
+    nx.draw_networkx_labels(G, pos, ax=ax, labels=labels, font_size=font_size)
+
+
 def finish(lines, fig, output):
     """Save the PNG, then print the result lines and GRAPH_IMAGE."""
     fig.savefig(output, format="png", bbox_inches="tight")
@@ -96,8 +115,42 @@ def finish(lines, fig, output):
 
 
 def cmd_structure(args):
-    load_graph(args[0])
-    fail("structure is not implemented yet")
+    G = load_graph(args[0])
+    output = args[1]
+
+    nodes = sorted(G.nodes())
+    in_degree = dict(G.in_degree())
+    out_degree = dict(G.out_degree())
+
+    # Strongly connected components: every page can reach every other page
+    # in the component by following links (the central core of the bow-tie).
+    components = [sorted(c) for c in nx.strongly_connected_components(G)]
+    components.sort(key=lambda c: (-len(c), c))
+    largest = components[0]
+
+    lines = [
+        f"NODES {G.number_of_nodes()}",
+        f"EDGES {G.number_of_edges()}",
+        " ".join(["IN_DEGREES"] + [f"{n}:{in_degree[n]}" for n in nodes]),
+        " ".join(["OUT_DEGREES"] + [f"{n}:{out_degree[n]}" for n in nodes]),
+        f"SCC_COUNT {len(components)}",
+        " ".join(["SCC_SIZES"] + [str(len(c)) for c in components]),
+        " ".join(["LARGEST_SCC"] + largest),
+    ]
+
+    colors = {n: "orange" if n in largest else "lightblue" for n in nodes}
+    sizes = {n: 1400 for n in nodes}
+    labels = {n: f"{n}\nin:{in_degree[n]} out:{out_degree[n]}" for n in nodes}
+
+    fig, ax = new_figure()
+    draw_digraph(G, ax, colors, sizes, labels)
+    noun = "component" if len(components) == 1 else "components"
+    ax.set_title(
+        f"Web Structure: {len(components)} strongly connected {noun} "
+        f"(largest SCC in orange, size {len(largest)})"
+    )
+
+    finish(lines, fig, output)
 
 
 def cmd_hits(args):
