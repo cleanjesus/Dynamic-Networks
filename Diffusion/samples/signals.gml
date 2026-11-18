@@ -1,0 +1,15 @@
+graph [
+  directed 1
+  node [ id 0 label "A" order 1 signal "H" ]
+  node [ id 1 label "B" order 2 signal "H" ]
+  node [ id 2 label "C" order 3 signal "L" ]
+  node [ id 3 label "D" order 4 signal "L" ]
+  node [ id 4 label "E" order 5 signal "H" ]
+  edge [ source 0 target 1 ]
+  edge [ source 0 target 2 ]
+  edge [ source 1 target 2 ]
+  edge [ source 1 target 3 ]
+  edge [ source 2 target 3 ]
+  edge [ source 2 target 4 ]
+  edge [ source 3 target 4 ]
+]
